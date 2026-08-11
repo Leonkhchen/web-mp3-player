@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>MP3 播放器</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--accent:#5b6cf3;--bg:#f4f5f7;--card:#fff;--border:#e3e5ea;--ok:#2ea043;--err:#d33;}
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans TC",sans-serif;
+       background:var(--bg);margin:0;color:#222;}
+  .wrap{max-width:720px;margin:0 auto;padding:2rem 1.2rem 4rem;}
+  h1{font-size:1.4rem;margin:0 0 .3rem;}
+  .sub{color:#666;font-size:.9rem;margin-bottom:1.5rem;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;
+        padding:1.5rem;margin-bottom:1.2rem;}
+  .drop{border:2px dashed var(--border);border-radius:12px;padding:2.5rem 1rem;text-align:center;
+        cursor:pointer;transition:.15s;}
+  .drop:hover, .drop.drag{border-color:var(--accent);background:#f4f5ff;}
+  .drop input{display:none;}
+  .drop .hint{color:#888;font-size:.85rem;margin-top:.4rem;}
+  button.primary{background:var(--accent);color:#fff;border:none;border-radius:9px;
+        padding:.75rem 1.4rem;font-size:1rem;cursor:pointer;width:100%;margin-top:1rem;}
+  button.primary:disabled{background:#c7cbe8;cursor:not-allowed;}
+  button.primary:hover:not(:disabled){background:#4a59e0;}
+  .err{color:var(--err);font-size:.85rem;margin-top:.6rem;}
+  .track{border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;margin-bottom:1rem;}
+  .track:last-child{margin-bottom:0;}
+  .track-title{font-weight:700;font-size:.98rem;margin-bottom:.6rem;overflow:hidden;
+        text-overflow:ellipsis;white-space:nowrap;}
+  .track audio{width:100%;margin-bottom:.8rem;}
+  .ctrl-row{display:flex;align-items:center;gap:.7rem;margin-bottom:.55rem;}
+  .ctrl-row:last-child{margin-bottom:0;}
+  .ctrl-label{font-size:.82rem;color:#555;width:4.4em;flex-shrink:0;}
+  .ctrl-row input[type=range]{flex:1;}
+  .ctrl-val{font-size:.8rem;color:#777;width:3.6em;text-align:right;flex-shrink:0;}
+  .file-list{list-style:none;margin:.8rem 0 0;padding:0;font-size:.85rem;color:#555;}
+  .file-list li{padding:.15rem 0;}
+  .top-actions{text-align:right;font-size:.8rem;margin-bottom:.6rem;}
+  .top-actions a{color:#999;text-decoration:none;}
+  .top-actions a:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  {% if has_password %}
+  <div class="top-actions"><a href="{{ url_for('logout') }}">登出</a></div>
+  {% endif %}
+  <h1>🎧 MP3 播放器</h1>
+  <div class="sub">上傳 MP3，直接在網頁上播放，可個別調整音量與速度（一次最多 {{ max_files }} 首）</div>
+
+  <div class="card" id="uploadCard">
+    <label for="fileInput" style="display:block;font-size:.85rem;color:#555;margin-bottom:.4rem;font-weight:600;">
+      選擇 MP3 檔案
+    </label>
+    <div class="drop" id="drop">
+      <div id="dropText">🎵 拖放 MP3 檔案到這裡，或點擊選擇（最多 {{ max_files }} 首）</div>
+      <div class="hint">僅支援 .mp3</div>
+      <input type="file" id="fileInput" accept=".mp3,audio/mpeg" multiple>
+    </div>
+    <ul class="file-list" id="pendingList"></ul>
+    <div class="err" id="uploadErr" style="display:none;"></div>
+    <button class="primary" id="uploadBtn" disabled>⬆️ 上傳並建立播放器</button>
+  </div>
+
+  <div class="card" id="playersCard" style="display:none;">
+    <div id="tracks"></div>
+  </div>
+</div>
+
+<script>
+const MAX_FILES = {{ max_files }};
+
+const drop = document.getElementById('drop');
+const dropText = document.getElementById('dropText');
+const fileInput = document.getElementById('fileInput');
+const pendingList = document.getElementById('pendingList');
+const uploadErr = document.getElementById('uploadErr');
+const uploadBtn = document.getElementById('uploadBtn');
+const playersCard = document.getElementById('playersCard');
+const tracksEl = document.getElementById('tracks');
+
+let pendingFiles = [];
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('drag');
+  setFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => setFiles(fileInput.files));
+
+function setFiles(fileListLike) {
+  const all = Array.from(fileListLike);
+  const mp3s = all.filter(f => f.name.toLowerCase().endsWith('.mp3'));
+  showErr('');
+  if (all.length !== mp3s.length) showErr('已略過非 .mp3 的檔案');
+  if (mp3s.length > MAX_FILES) {
+    showErr(`一次最多上傳 ${MAX_FILES} 首，已取前 ${MAX_FILES} 首`);
+  }
+  pendingFiles = mp3s.slice(0, MAX_FILES);
+  pendingList.innerHTML = pendingFiles.map(f => `<li>🎵 ${escapeHtml(f.name)}</li>`).join('');
+  dropText.textContent = pendingFiles.length
+    ? `已選擇 ${pendingFiles.length} 首`
+    : `🎵 拖放 MP3 檔案到這裡，或點擊選擇（最多 ${MAX_FILES} 首）`;
+  uploadBtn.disabled = pendingFiles.length === 0;
+}
+
+function showErr(msg) {
+  uploadErr.textContent = msg;
+  uploadErr.style.display = msg ? 'block' : 'none';
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+uploadBtn.addEventListener('click', async () => {
+  if (!pendingFiles.length) return;
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = '⏳ 上傳中…';
+  const fd = new FormData();
+  pendingFiles.forEach(f => fd.append('files', f));
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '上傳失敗');
+    renderPlayers(data.tracks);
+    playersCard.style.display = 'block';
+    pendingFiles = [];
+    pendingList.innerHTML = '';
+    fileInput.value = '';
+    dropText.textContent = `🎵 拖放 MP3 檔案到這裡，或點擊選擇（最多 ${MAX_FILES} 首）`;
+  } catch (e) {
+    showErr('錯誤：' + e.message);
+  } finally {
+    uploadBtn.disabled = pendingFiles.length === 0;
+    uploadBtn.textContent = '⬆️ 上傳並建立播放器';
+  }
+});
+
+function renderPlayers(tracks) {
+  tracksEl.innerHTML = tracks.map((t, i) => `
+    <div class="track">
+      <div class="track-title">🎵 ${escapeHtml(t.name)}</div>
+      <audio id="au_${i}" src="${t.url}" controls preload="metadata"></audio>
+      <div class="ctrl-row">
+        <span class="ctrl-label">🔊 音量</span>
+        <input type="range" id="vol_${i}" min="0" max="100" value="100">
+        <span class="ctrl-val" id="volVal_${i}">100%</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label">⏩ 速度</span>
+        <input type="range" id="rate_${i}" min="0.5" max="2" step="0.1" value="1">
+        <span class="ctrl-val" id="rateVal_${i}">1.0x</span>
+      </div>
+    </div>
+  `).join('');
+
+  tracks.forEach((t, i) => {
+    const audio = document.getElementById(`au_${i}`);
+    const vol = document.getElementById(`vol_${i}`);
+    const volVal = document.getElementById(`volVal_${i}`);
+    const rate = document.getElementById(`rate_${i}`);
+    const rateVal = document.getElementById(`rateVal_${i}`);
+
+    audio.volume = 1;
+    audio.playbackRate = 1;
+
+    vol.addEventListener('input', () => {
+      const v = Number(vol.value);
+      audio.volume = v / 100;
+      volVal.textContent = v + '%';
+    });
+    rate.addEventListener('input', () => {
+      const r = Number(rate.value);
+      audio.playbackRate = r;
+      rateVal.textContent = r.toFixed(1) + 'x';
+    });
+  });
+}
+</script>
+</body>
+</html>
