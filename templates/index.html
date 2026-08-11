@@ -66,6 +66,12 @@
     background:var(--card-2); color:var(--text); border-radius:8px; padding:.15rem .5rem;
     font-size:.72rem; flex-shrink:0;
   }
+  .pending-list .pname{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .pending-list .pstatus{font-size:.72rem; flex-shrink:0; min-width:3.6em; text-align:right;}
+  .pending-list .pstatus.wait{color:var(--text-faint);}
+  .pending-list .pstatus.up{color:var(--accent);}
+  .pending-list .pstatus.ok{color:var(--ok);}
+  .pending-list .pstatus.fail{color:var(--err);}
 
   .err-msg{color:var(--err); font-size:.82rem; margin-top:.7rem;}
 
@@ -366,12 +372,22 @@ function setFiles(fileListLike) {
   if (all.length !== mp3s.length) showErr('已略過非 .mp3 的檔案');
   if (mp3s.length > MAX_FILES) showErr(`一次最多上傳 ${MAX_FILES} 首，已取前 ${MAX_FILES} 首`);
   pendingFiles = mp3s.slice(0, MAX_FILES);
-  pendingList.innerHTML = pendingFiles.map(f =>
-    `<li>🎵 <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(f.name)}</span>
-     <span class="pill">${(f.size/1024/1024).toFixed(1)}MB</span></li>`
-  ).join('');
+  renderPendingList();
   dropText.textContent = pendingFiles.length ? `已選擇 ${pendingFiles.length} 首` : `新增 MP3（最多 ${MAX_FILES} 首）`;
   uploadBtn.disabled = pendingFiles.length === 0;
+}
+
+function renderPendingList() {
+  pendingList.innerHTML = pendingFiles.map((f, i) =>
+    `<li id="pend_${i}">🎵 <span class="pname">${escapeHtml(f.name)}</span>
+     <span class="pill">${(f.size/1024/1024).toFixed(1)}MB</span>
+     <span class="pstatus wait" id="pstat_${i}">等待中</span></li>`
+  ).join('');
+}
+
+function setPendingStatus(i, cls, text) {
+  const el = document.getElementById(`pstat_${i}`);
+  if (el) { el.className = 'pstatus ' + cls; el.textContent = text; }
 }
 
 function showErr(msg) { uploadErr.textContent = msg; uploadErr.classList.toggle('hidden', !msg); }
@@ -382,32 +398,76 @@ function fmtTime(t) {
   return `${m}:${String(s).padStart(2,'0')}`;
 }
 
+// 用 XMLHttpRequest（而非 fetch）逐一上傳每首歌：
+// - 一次一個檔案，避免手機行動網路上傳大型 multipart 請求時逾時／中斷
+//   （這是 iPhone Safari 常見的 fetch "Load failed" 主因之一）
+// - 有明確的逾時設定與進度回報，錯誤訊息也更明確
+function uploadOneFile(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+    xhr.timeout = 60000; // 60 秒，行動網路上傳單一 mp3 通常足夠
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { /* ignore */ }
+      if (xhr.status >= 200 && xhr.status < 300 && data.tracks) {
+        resolve(data.tracks[0]);
+      } else {
+        reject(new Error(data.error || `上傳失敗（HTTP ${xhr.status || '無回應'}）`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('網路連線中斷，請確認訊號後重試'));
+    xhr.ontimeout = () => reject(new Error('上傳逾時，請確認網路連線後重試'));
+    const fd = new FormData();
+    fd.append('files', file);
+    xhr.send(fd);
+  });
+}
+
 uploadBtn.addEventListener('click', async () => {
   if (!pendingFiles.length) return;
   uploadBtn.disabled = true;
-  uploadBtn.textContent = '上傳中…';
-  const fd = new FormData();
-  pendingFiles.forEach(f => fd.append('files', f));
-  try {
-    const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '上傳失敗');
-    tracks = data.tracks.map(t => ({ name: t.name, url: t.url }));
+  showErr('');
+  const newTracks = [];
+  const failedNames = [];
+
+  for (let i = 0; i < pendingFiles.length; i++) {
+    uploadBtn.textContent = `上傳中… (${i + 1}/${pendingFiles.length})`;
+    setPendingStatus(i, 'up', '0%');
+    try {
+      const t = await uploadOneFile(pendingFiles[i], (pct) => setPendingStatus(i, 'up', pct + '%'));
+      setPendingStatus(i, 'ok', '✓ 完成');
+      newTracks.push({ name: t.name, url: t.url });
+    } catch (e) {
+      setPendingStatus(i, 'fail', '✗ 失敗');
+      failedNames.push(`${pendingFiles[i].name}（${e.message}）`);
+    }
+  }
+
+  if (newTracks.length) {
+    tracks = newTracks;
     currentIndex = -1;
     renderTrackList();
     playlistSection.classList.remove('hidden');
+    playlistSection.scrollIntoView({behavior:'smooth'});
+  }
+  if (failedNames.length) {
+    showErr('部分檔案上傳失敗：' + failedNames.join('；'));
+  } else {
     uploadCard.classList.add('hidden');
+  }
+
+  if (!failedNames.length) {
     pendingFiles = [];
     pendingList.innerHTML = '';
     fileInput.value = '';
     dropText.textContent = `新增 MP3（最多 ${MAX_FILES} 首）`;
-    playlistSection.scrollIntoView({behavior:'smooth'});
-  } catch (e) {
-    showErr('錯誤：' + e.message);
-  } finally {
-    uploadBtn.disabled = pendingFiles.length === 0;
-    uploadBtn.textContent = '加入播放清單';
   }
+  uploadBtn.disabled = pendingFiles.length === 0;
+  uploadBtn.textContent = '加入播放清單';
 });
 
 // ── playlist rendering ──────────────────────────────────────
