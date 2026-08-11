@@ -160,9 +160,12 @@
   .sheet{
     position:fixed; left:0; right:0; bottom:0; z-index:30; max-width:480px; margin:0 auto;
     background:linear-gradient(180deg,#1c1c2c,#101018 70%);
-    border-radius:28px 28px 0 0; padding:.9rem 1.5rem calc(1.8rem + var(--safe-b));
+    border-radius:28px 28px 0 0; padding:.9rem 1.5rem calc(2.4rem + var(--safe-b) + 34px);
     transform:translateY(100%); transition:transform .3s cubic-bezier(.2,.9,.3,1);
     box-shadow:0 -20px 60px -20px rgba(0,0,0,.7);
+    /* 手機瀏覽器（尤其 iOS Safari）自己的工具列不算在 safe-area 內，
+       用 dvh 限制最大高度並允許內部捲動，避免最下面的內容被工具列蓋住 */
+    max-height:88dvh; overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
   .sheet.show{transform:translateY(0);}
   .sheet-handle{width:36px; height:4px; background:#3a3a52; border-radius:3px; margin:0 auto 1rem;}
@@ -199,6 +202,10 @@
   }
 
   .ctrl-block{margin-bottom:1.1rem;}
+  .ios-vol-note{
+    font-size:.78rem; color:var(--text-dim); background:var(--card-2); border:1px solid var(--border);
+    border-radius:10px; padding:.6rem .7rem; line-height:1.4;
+  }
   .ctrl-title{display:flex; justify-content:space-between; font-size:.8rem; color:var(--text-dim); margin-bottom:.4rem; font-weight:600;}
   .ctrl-title b{color:var(--text); font-weight:700;}
   .ctrl-row{display:flex; align-items:center; gap:.7rem;}
@@ -290,9 +297,10 @@
     <button class="step" id="nextBtn">⏭</button>
   </div>
 
-  <div class="ctrl-block">
+  <div class="ctrl-block" id="volBlock">
     <div class="ctrl-title"><span>🔊 音量</span><b id="volLabel">100%</b></div>
     <div class="ctrl-row"><input type="range" id="volSlider" min="0" max="100" value="100"></div>
+    <div class="ios-vol-note hidden" id="iosVolNote">🔒 iOS 系統限制，網頁無法調整音量，請使用手機側邊音量鍵</div>
   </div>
 
   <div class="ctrl-block">
@@ -343,7 +351,18 @@ const nextBtn = document.getElementById('nextBtn');
 const playBigBtn = document.getElementById('playBigBtn');
 const volSlider = document.getElementById('volSlider');
 const volLabel = document.getElementById('volLabel');
+const iosVolNote = document.getElementById('iosVolNote');
 const rateLabel = document.getElementById('rateLabel');
+
+// iOS（iPhone/iPad）的 Safari／WebKit 會忽略 <audio>.volume 的設定，
+// 音量只能用實體側邊鍵調整，網頁滑桿在 iOS 上是無效的，所以直接隱藏並提示。
+const isIOS = /iP(hone|od|ad)/.test(navigator.platform) ||
+  (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+if (isIOS) {
+  volSlider.classList.add('hidden');
+  volLabel.parentElement.classList.add('hidden');
+  iosVolNote.classList.remove('hidden');
+}
 const speedChips = document.getElementById('speedChips');
 
 let pendingFiles = [];
