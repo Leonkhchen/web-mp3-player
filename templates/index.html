@@ -2,184 +2,557 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<title>MP3 播放器</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我的音樂</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0c0c14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
-  :root{--accent:#5b6cf3;--bg:#f4f5f7;--card:#fff;--border:#e3e5ea;--ok:#2ea043;--err:#d33;}
-  *{box-sizing:border-box;}
-  body{font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans TC",sans-serif;
-       background:var(--bg);margin:0;color:#222;}
-  .wrap{max-width:720px;margin:0 auto;padding:2rem 1.2rem 4rem;}
-  h1{font-size:1.4rem;margin:0 0 .3rem;}
-  .sub{color:#666;font-size:.9rem;margin-bottom:1.5rem;}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;
-        padding:1.5rem;margin-bottom:1.2rem;}
-  .drop{border:2px dashed var(--border);border-radius:12px;padding:2.5rem 1rem;text-align:center;
-        cursor:pointer;transition:.15s;}
-  .drop:hover, .drop.drag{border-color:var(--accent);background:#f4f5ff;}
-  .drop input{display:none;}
-  .drop .hint{color:#888;font-size:.85rem;margin-top:.4rem;}
-  button.primary{background:var(--accent);color:#fff;border:none;border-radius:9px;
-        padding:.75rem 1.4rem;font-size:1rem;cursor:pointer;width:100%;margin-top:1rem;}
-  button.primary:disabled{background:#c7cbe8;cursor:not-allowed;}
-  button.primary:hover:not(:disabled){background:#4a59e0;}
-  .err{color:var(--err);font-size:.85rem;margin-top:.6rem;}
-  .track{border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;margin-bottom:1rem;}
-  .track:last-child{margin-bottom:0;}
-  .track-title{font-weight:700;font-size:.98rem;margin-bottom:.6rem;overflow:hidden;
-        text-overflow:ellipsis;white-space:nowrap;}
-  .track audio{width:100%;margin-bottom:.8rem;}
-  .ctrl-row{display:flex;align-items:center;gap:.7rem;margin-bottom:.55rem;}
-  .ctrl-row:last-child{margin-bottom:0;}
-  .ctrl-label{font-size:.82rem;color:#555;width:4.4em;flex-shrink:0;}
+  :root{
+    --bg-0:#0b0b12; --bg-1:#14141f; --card:#1b1b28; --card-2:#20202f;
+    --border:#2a2a3a; --text:#f2f2f7; --text-dim:#9797a8; --text-faint:#5f5f70;
+    --accent:#7c6cff; --accent-2:#5b6cf3; --ok:#34d399; --err:#ff6b6b;
+    --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; font-family:-apple-system,"SF Pro Text","Segoe UI",Roboto,"Noto Sans TC",sans-serif;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #26264a 0%, transparent 60%),
+      linear-gradient(180deg, var(--bg-1), var(--bg-0) 40%);
+    color:var(--text); min-height:100%; overscroll-behavior-y:none;
+  }
+  .shell{max-width:480px; margin:0 auto; min-height:100vh; padding-bottom:calc(96px + var(--safe-b)); position:relative;}
+
+  header.top{
+    position:sticky; top:0; z-index:5; padding:calc(1.1rem + var(--safe-t)) 1.2rem .9rem;
+    background:linear-gradient(180deg, rgba(11,11,18,.92), rgba(11,11,18,.55) 80%, transparent);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  }
+  header.top h1{font-size:1.5rem; margin:0; font-weight:800; letter-spacing:-.02em;}
+  header.top .sub{color:var(--text-dim); font-size:.82rem; margin-top:.15rem;}
+
+  main{padding:0 1.2rem;}
+
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:20px;
+    padding:1.3rem; margin-bottom:1.1rem;
+  }
+
+  /* ── upload ───────────────────────────────────────────────── */
+  .upload-zone{
+    border:1.5px dashed #3a3a52; border-radius:18px; padding:2.1rem 1rem;
+    text-align:center; cursor:pointer; transition:.15s; background:var(--card-2);
+  }
+  .upload-zone:active, .upload-zone.drag{border-color:var(--accent); background:#22223a;}
+  .upload-zone .icon{
+    width:56px; height:56px; margin:0 auto .7rem; border-radius:50%;
+    background:linear-gradient(135deg, var(--accent), var(--accent-2));
+    display:flex; align-items:center; justify-content:center; font-size:1.5rem;
+  }
+  .upload-zone .txt{font-weight:700; font-size:.95rem;}
+  .upload-zone .hint{color:var(--text-dim); font-size:.8rem; margin-top:.3rem;}
+  .upload-zone input{display:none;}
+
+  .pending-list{list-style:none; margin:.9rem 0 0; padding:0;}
+  .pending-list li{
+    display:flex; align-items:center; gap:.6rem; padding:.5rem .2rem;
+    font-size:.85rem; color:var(--text-dim); border-bottom:1px solid var(--border);
+  }
+  .pending-list li:last-child{border-bottom:none;}
+  .pending-list .pill{
+    background:var(--card-2); color:var(--text); border-radius:8px; padding:.15rem .5rem;
+    font-size:.72rem; flex-shrink:0;
+  }
+
+  .err-msg{color:var(--err); font-size:.82rem; margin-top:.7rem;}
+
+  button.primary{
+    width:100%; margin-top:1.1rem; border:none; border-radius:14px; padding:.95rem 1.2rem;
+    font-size:1rem; font-weight:700; color:#fff; cursor:pointer;
+    background:linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow:0 8px 20px -8px rgba(124,108,255,.6);
+  }
+  button.primary:disabled{opacity:.4; box-shadow:none; cursor:not-allowed;}
+  button.primary:active:not(:disabled){transform:scale(.98);}
+
+  button.ghost{
+    width:100%; margin-top:.7rem; border:1px solid var(--border); border-radius:14px;
+    padding:.8rem 1.2rem; font-size:.9rem; font-weight:600; color:var(--text-dim);
+    background:transparent; cursor:pointer;
+  }
+
+  /* ── playlist ─────────────────────────────────────────────── */
+  .section-title{font-size:.8rem; font-weight:700; color:var(--text-dim); letter-spacing:.06em;
+    text-transform:uppercase; margin:0 .3rem .6rem;}
+
+  .track-row{
+    display:flex; align-items:center; gap:.8rem; padding:.7rem; border-radius:16px;
+    cursor:pointer; transition:.12s; margin-bottom:.5rem; border:1px solid transparent;
+  }
+  .track-row:active{background:var(--card-2);}
+  .track-row.active{background:#23233a; border-color:#3a3a5c;}
+  .track-art{
+    width:46px; height:46px; border-radius:12px; flex-shrink:0; display:flex;
+    align-items:center; justify-content:center; font-size:1.2rem; color:#fff;
+    background:linear-gradient(135deg, var(--accent-2), #9c7cff);
+  }
+  .track-row.active .track-art{background:linear-gradient(135deg, var(--ok), var(--accent));}
+  .track-info{flex:1; min-width:0;}
+  .track-name{font-weight:650; font-size:.92rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .track-meta{font-size:.76rem; color:var(--text-dim); margin-top:.1rem;}
+  .track-play-btn{
+    width:34px; height:34px; border-radius:50%; border:none; background:var(--card-2);
+    color:var(--text); display:flex; align-items:center; justify-content:center;
+    font-size:.9rem; flex-shrink:0;
+  }
+  .track-row.active .track-play-btn{background:var(--accent);}
+  .eq{display:flex; align-items:flex-end; gap:2px; height:14px;}
+  .eq span{width:3px; background:#fff; border-radius:2px; animation:eqbar 1s ease-in-out infinite;}
+  .eq span:nth-child(1){height:40%; animation-delay:-.4s;}
+  .eq span:nth-child(2){height:100%; animation-delay:-.2s;}
+  .eq span:nth-child(3){height:65%; animation-delay:0s;}
+  @keyframes eqbar{0%,100%{transform:scaleY(.4);} 50%{transform:scaleY(1);}}
+
+  /* ── mini player (sticky bottom bar) ─────────────────────── */
+  .mini-player{
+    position:fixed; left:0; right:0; bottom:0; z-index:20;
+    display:flex; justify-content:center;
+    padding:0 .8rem calc(.8rem + var(--safe-b));
+    transform:translateY(120%); transition:transform .25s ease;
+    pointer-events:none;
+  }
+  .mini-player.show{transform:translateY(0); pointer-events:auto;}
+  .mini-inner{
+    width:100%; max-width:448px; background:#23233aee; backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px); border:1px solid #34344c; border-radius:18px;
+    padding:.6rem .7rem; display:flex; align-items:center; gap:.7rem;
+    box-shadow:0 14px 34px -14px rgba(0,0,0,.6);
+  }
+  .mini-art{
+    width:38px; height:38px; border-radius:10px; flex-shrink:0;
+    background:linear-gradient(135deg, var(--accent-2), #9c7cff);
+    display:flex; align-items:center; justify-content:center; font-size:1rem;
+  }
+  .mini-info{flex:1; min-width:0;}
+  .mini-title{font-size:.85rem; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .mini-progress{height:3px; background:#3a3a52; border-radius:2px; margin-top:.35rem; overflow:hidden;}
+  .mini-progress > div{height:100%; background:var(--accent); width:0%;}
+  .mini-btn{
+    width:38px; height:38px; border-radius:50%; border:none; background:var(--accent);
+    color:#fff; font-size:1.05rem; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+
+  /* ── now playing sheet ───────────────────────────────────── */
+  .sheet-backdrop{
+    position:fixed; inset:0; background:rgba(6,6,10,.55); backdrop-filter:blur(2px);
+    z-index:29; opacity:0; pointer-events:none; transition:opacity .25s;
+  }
+  .sheet-backdrop.show{opacity:1; pointer-events:auto;}
+  .sheet{
+    position:fixed; left:0; right:0; bottom:0; z-index:30; max-width:480px; margin:0 auto;
+    background:linear-gradient(180deg,#1c1c2c,#101018 70%);
+    border-radius:28px 28px 0 0; padding:.9rem 1.5rem calc(1.8rem + var(--safe-b));
+    transform:translateY(100%); transition:transform .3s cubic-bezier(.2,.9,.3,1);
+    box-shadow:0 -20px 60px -20px rgba(0,0,0,.7);
+  }
+  .sheet.show{transform:translateY(0);}
+  .sheet-handle{width:36px; height:4px; background:#3a3a52; border-radius:3px; margin:0 auto 1rem;}
+  .sheet-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:1.6rem;}
+  .sheet-top .close-btn{
+    width:32px; height:32px; border-radius:50%; border:none; background:var(--card-2);
+    color:var(--text-dim); font-size:1rem; display:flex; align-items:center; justify-content:center;
+  }
+  .sheet-top .label{font-size:.75rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em; font-weight:700;}
+
+  .disc-wrap{display:flex; justify-content:center; margin-bottom:1.6rem;}
+  .disc{
+    width:220px; height:220px; border-radius:24px; display:flex; align-items:center; justify-content:center;
+    font-size:4rem; background:linear-gradient(135deg, var(--accent-2), #9c7cff, #ff8bd0);
+    box-shadow:0 20px 50px -20px rgba(124,108,255,.7);
+    transition:transform .4s ease;
+  }
+  .disc.playing{animation:pulse 2.4s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{transform:scale(1);} 50%{transform:scale(1.035);}}
+
+  .np-title{font-size:1.2rem; font-weight:800; text-align:center; letter-spacing:-.01em;}
+  .np-sub{font-size:.82rem; color:var(--text-dim); text-align:center; margin-top:.2rem; margin-bottom:1.4rem;}
+
+  .seek-row input[type=range]{width:100%;}
+  .time-row{display:flex; justify-content:space-between; font-size:.72rem; color:var(--text-dim); margin-top:.2rem;}
+
+  .transport{display:flex; align-items:center; justify-content:center; gap:1.6rem; margin:1.3rem 0 1.5rem;}
+  .transport button{border:none; background:transparent; color:var(--text); cursor:pointer;}
+  .transport .step{font-size:1.5rem; color:var(--text-dim);}
+  .transport .play-big{
+    width:66px; height:66px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:1.6rem; background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#fff;
+    box-shadow:0 10px 26px -10px rgba(124,108,255,.8);
+  }
+
+  .ctrl-block{margin-bottom:1.1rem;}
+  .ctrl-title{display:flex; justify-content:space-between; font-size:.8rem; color:var(--text-dim); margin-bottom:.4rem; font-weight:600;}
+  .ctrl-title b{color:var(--text); font-weight:700;}
+  .ctrl-row{display:flex; align-items:center; gap:.7rem;}
   .ctrl-row input[type=range]{flex:1;}
-  .ctrl-val{font-size:.8rem;color:#777;width:3.6em;text-align:right;flex-shrink:0;}
-  .file-list{list-style:none;margin:.8rem 0 0;padding:0;font-size:.85rem;color:#555;}
-  .file-list li{padding:.15rem 0;}
-  .top-actions{text-align:right;font-size:.8rem;margin-bottom:.6rem;}
-  .top-actions a{color:#999;text-decoration:none;}
-  .top-actions a:hover{text-decoration:underline;}
+
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; height:5px; border-radius:3px;
+    background:linear-gradient(90deg, var(--accent) var(--_p,50%), #33334a var(--_p,50%));
+    outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:#fff;
+    box-shadow:0 2px 8px rgba(0,0,0,.4); cursor:pointer; margin-top:-6.5px;
+  }
+  input[type=range]::-moz-range-thumb{width:18px; height:18px; border-radius:50%; background:#fff; border:none; cursor:pointer;}
+
+  .speed-chips{display:flex; gap:.45rem; flex-wrap:wrap;}
+  .chip{
+    border:1px solid var(--border); background:var(--card-2); color:var(--text-dim);
+    border-radius:999px; padding:.35rem .8rem; font-size:.8rem; font-weight:650; cursor:pointer;
+  }
+  .chip.active{background:var(--accent); border-color:var(--accent); color:#fff;}
+
+  .hidden{display:none !important;}
 </style>
 </head>
 <body>
-<div class="wrap">
-  {% if has_password %}
-  <div class="top-actions"><a href="{{ url_for('logout') }}">登出</a></div>
-  {% endif %}
-  <h1>🎧 MP3 播放器</h1>
-  <div class="sub">上傳 MP3，直接在網頁上播放，可個別調整音量與速度（一次最多 {{ max_files }} 首）</div>
+<div class="shell">
+  <header class="top">
+    <h1>🎵 我的音樂</h1>
+    <div class="sub">上傳手機裡的 MP3，直接在網頁上播放</div>
+  </header>
 
-  <div class="card" id="uploadCard">
-    <label for="fileInput" style="display:block;font-size:.85rem;color:#555;margin-bottom:.4rem;font-weight:600;">
-      選擇 MP3 檔案
-    </label>
-    <div class="drop" id="drop">
-      <div id="dropText">🎵 拖放 MP3 檔案到這裡，或點擊選擇（最多 {{ max_files }} 首）</div>
-      <div class="hint">僅支援 .mp3</div>
-      <input type="file" id="fileInput" accept=".mp3,audio/mpeg" multiple>
+  <main>
+    <div class="card" id="uploadCard">
+      <div class="upload-zone" id="drop">
+        <div class="icon">＋</div>
+        <div class="txt" id="dropText">新增 MP3（最多 {{ max_files }} 首）</div>
+        <div class="hint">點一下從手機檔案 / 相簿選取，僅支援 .mp3</div>
+        <input type="file" id="fileInput" accept=".mp3,audio/mpeg" multiple>
+      </div>
+      <ul class="pending-list" id="pendingList"></ul>
+      <div class="err-msg hidden" id="uploadErr"></div>
+      <button class="primary" id="uploadBtn" disabled>加入播放清單</button>
     </div>
-    <ul class="file-list" id="pendingList"></ul>
-    <div class="err" id="uploadErr" style="display:none;"></div>
-    <button class="primary" id="uploadBtn" disabled>⬆️ 上傳並建立播放器</button>
+
+    <div id="playlistSection" class="hidden">
+      <div class="section-title">播放清單</div>
+      <div id="trackList"></div>
+      <button class="ghost" id="addMoreBtn">＋ 重新選擇 MP3</button>
+    </div>
+  </main>
+</div>
+
+<!-- mini player -->
+<div class="mini-player" id="miniPlayer">
+  <div class="mini-inner" id="miniInner">
+    <div class="mini-art">🎵</div>
+    <div class="mini-info">
+      <div class="mini-title" id="miniTitle">—</div>
+      <div class="mini-progress"><div id="miniProgressFill"></div></div>
+    </div>
+    <button class="mini-btn" id="miniPlayBtn">▶</button>
+  </div>
+</div>
+
+<!-- now playing sheet -->
+<div class="sheet-backdrop" id="sheetBackdrop"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-top">
+    <button class="close-btn" id="sheetClose">⌄</button>
+    <div class="label">現正播放</div>
+    <div style="width:32px;"></div>
   </div>
 
-  <div class="card" id="playersCard" style="display:none;">
-    <div id="tracks"></div>
+  <div class="disc-wrap"><div class="disc" id="disc">🎵</div></div>
+  <div class="np-title" id="npTitle">—</div>
+  <div class="np-sub" id="npSub">—</div>
+
+  <div class="seek-row">
+    <input type="range" id="seek" min="0" max="100" value="0" step="0.1">
+    <div class="time-row"><span id="curTime">0:00</span><span id="durTime">0:00</span></div>
+  </div>
+
+  <div class="transport">
+    <button class="step" id="prevBtn">⏮</button>
+    <button class="play-big" id="playBigBtn">▶</button>
+    <button class="step" id="nextBtn">⏭</button>
+  </div>
+
+  <div class="ctrl-block">
+    <div class="ctrl-title"><span>🔊 音量</span><b id="volLabel">100%</b></div>
+    <div class="ctrl-row"><input type="range" id="volSlider" min="0" max="100" value="100"></div>
+  </div>
+
+  <div class="ctrl-block">
+    <div class="ctrl-title"><span>⏩ 播放速度</span><b id="rateLabel">1.0x</b></div>
+    <div class="speed-chips" id="speedChips">
+      <button class="chip" data-rate="0.5">0.5x</button>
+      <button class="chip" data-rate="0.75">0.75x</button>
+      <button class="chip active" data-rate="1">1x</button>
+      <button class="chip" data-rate="1.25">1.25x</button>
+      <button class="chip" data-rate="1.5">1.5x</button>
+      <button class="chip" data-rate="2">2x</button>
+    </div>
   </div>
 </div>
 
 <script>
 const MAX_FILES = {{ max_files }};
 
+// ── elements ──────────────────────────────────────────────────
 const drop = document.getElementById('drop');
 const dropText = document.getElementById('dropText');
 const fileInput = document.getElementById('fileInput');
 const pendingList = document.getElementById('pendingList');
 const uploadErr = document.getElementById('uploadErr');
 const uploadBtn = document.getElementById('uploadBtn');
-const playersCard = document.getElementById('playersCard');
-const tracksEl = document.getElementById('tracks');
+const uploadCard = document.getElementById('uploadCard');
+const playlistSection = document.getElementById('playlistSection');
+const trackListEl = document.getElementById('trackList');
+const addMoreBtn = document.getElementById('addMoreBtn');
+
+const miniPlayer = document.getElementById('miniPlayer');
+const miniTitle = document.getElementById('miniTitle');
+const miniProgressFill = document.getElementById('miniProgressFill');
+const miniPlayBtn = document.getElementById('miniPlayBtn');
+const miniInner = document.getElementById('miniInner');
+
+const sheet = document.getElementById('sheet');
+const sheetBackdrop = document.getElementById('sheetBackdrop');
+const sheetClose = document.getElementById('sheetClose');
+const disc = document.getElementById('disc');
+const npTitle = document.getElementById('npTitle');
+const npSub = document.getElementById('npSub');
+const seek = document.getElementById('seek');
+const curTimeEl = document.getElementById('curTime');
+const durTimeEl = document.getElementById('durTime');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const playBigBtn = document.getElementById('playBigBtn');
+const volSlider = document.getElementById('volSlider');
+const volLabel = document.getElementById('volLabel');
+const rateLabel = document.getElementById('rateLabel');
+const speedChips = document.getElementById('speedChips');
 
 let pendingFiles = [];
+let tracks = [];       // [{name, url}]
+let currentIndex = -1;
+let seeking = false;
 
+const audio = new Audio();
+audio.preload = 'metadata';
+
+// ── upload flow ──────────────────────────────────────────────
 drop.addEventListener('click', () => fileInput.click());
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
-drop.addEventListener('drop', e => {
-  e.preventDefault(); drop.classList.remove('drag');
-  setFiles(e.dataTransfer.files);
-});
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); setFiles(e.dataTransfer.files); });
 fileInput.addEventListener('change', () => setFiles(fileInput.files));
+addMoreBtn.addEventListener('click', () => {
+  uploadCard.classList.remove('hidden');
+  uploadCard.scrollIntoView({behavior:'smooth'});
+});
 
 function setFiles(fileListLike) {
   const all = Array.from(fileListLike);
   const mp3s = all.filter(f => f.name.toLowerCase().endsWith('.mp3'));
   showErr('');
   if (all.length !== mp3s.length) showErr('已略過非 .mp3 的檔案');
-  if (mp3s.length > MAX_FILES) {
-    showErr(`一次最多上傳 ${MAX_FILES} 首，已取前 ${MAX_FILES} 首`);
-  }
+  if (mp3s.length > MAX_FILES) showErr(`一次最多上傳 ${MAX_FILES} 首，已取前 ${MAX_FILES} 首`);
   pendingFiles = mp3s.slice(0, MAX_FILES);
-  pendingList.innerHTML = pendingFiles.map(f => `<li>🎵 ${escapeHtml(f.name)}</li>`).join('');
-  dropText.textContent = pendingFiles.length
-    ? `已選擇 ${pendingFiles.length} 首`
-    : `🎵 拖放 MP3 檔案到這裡，或點擊選擇（最多 ${MAX_FILES} 首）`;
+  pendingList.innerHTML = pendingFiles.map(f =>
+    `<li>🎵 <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(f.name)}</span>
+     <span class="pill">${(f.size/1024/1024).toFixed(1)}MB</span></li>`
+  ).join('');
+  dropText.textContent = pendingFiles.length ? `已選擇 ${pendingFiles.length} 首` : `新增 MP3（最多 ${MAX_FILES} 首）`;
   uploadBtn.disabled = pendingFiles.length === 0;
 }
 
-function showErr(msg) {
-  uploadErr.textContent = msg;
-  uploadErr.style.display = msg ? 'block' : 'none';
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function showErr(msg) { uploadErr.textContent = msg; uploadErr.classList.toggle('hidden', !msg); }
+function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtTime(t) {
+  if (!isFinite(t) || t < 0) return '0:00';
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return `${m}:${String(s).padStart(2,'0')}`;
 }
 
 uploadBtn.addEventListener('click', async () => {
   if (!pendingFiles.length) return;
   uploadBtn.disabled = true;
-  uploadBtn.textContent = '⏳ 上傳中…';
+  uploadBtn.textContent = '上傳中…';
   const fd = new FormData();
   pendingFiles.forEach(f => fd.append('files', f));
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '上傳失敗');
-    renderPlayers(data.tracks);
-    playersCard.style.display = 'block';
+    tracks = data.tracks.map(t => ({ name: t.name, url: t.url }));
+    currentIndex = -1;
+    renderTrackList();
+    playlistSection.classList.remove('hidden');
+    uploadCard.classList.add('hidden');
     pendingFiles = [];
     pendingList.innerHTML = '';
     fileInput.value = '';
-    dropText.textContent = `🎵 拖放 MP3 檔案到這裡，或點擊選擇（最多 ${MAX_FILES} 首）`;
+    dropText.textContent = `新增 MP3（最多 ${MAX_FILES} 首）`;
+    playlistSection.scrollIntoView({behavior:'smooth'});
   } catch (e) {
     showErr('錯誤：' + e.message);
   } finally {
     uploadBtn.disabled = pendingFiles.length === 0;
-    uploadBtn.textContent = '⬆️ 上傳並建立播放器';
+    uploadBtn.textContent = '加入播放清單';
   }
 });
 
-function renderPlayers(tracks) {
-  tracksEl.innerHTML = tracks.map((t, i) => `
-    <div class="track">
-      <div class="track-title">🎵 ${escapeHtml(t.name)}</div>
-      <audio id="au_${i}" src="${t.url}" controls preload="metadata"></audio>
-      <div class="ctrl-row">
-        <span class="ctrl-label">🔊 音量</span>
-        <input type="range" id="vol_${i}" min="0" max="100" value="100">
-        <span class="ctrl-val" id="volVal_${i}">100%</span>
+// ── playlist rendering ──────────────────────────────────────
+function renderTrackList() {
+  trackListEl.innerHTML = tracks.map((t, i) => `
+    <div class="track-row" data-i="${i}" id="row_${i}">
+      <div class="track-art">🎵</div>
+      <div class="track-info">
+        <div class="track-name">${escapeHtml(t.name)}</div>
+        <div class="track-meta" id="meta_${i}">MP3</div>
       </div>
-      <div class="ctrl-row">
-        <span class="ctrl-label">⏩ 速度</span>
-        <input type="range" id="rate_${i}" min="0.5" max="2" step="0.1" value="1">
-        <span class="ctrl-val" id="rateVal_${i}">1.0x</span>
-      </div>
+      <button class="track-play-btn" id="playbtn_${i}">▶</button>
     </div>
   `).join('');
 
   tracks.forEach((t, i) => {
-    const audio = document.getElementById(`au_${i}`);
-    const vol = document.getElementById(`vol_${i}`);
-    const volVal = document.getElementById(`volVal_${i}`);
-    const rate = document.getElementById(`rate_${i}`);
-    const rateVal = document.getElementById(`rateVal_${i}`);
+    document.getElementById(`row_${i}`).addEventListener('click', () => onTrackTap(i));
+  });
+  updateActiveRow();
+}
 
-    audio.volume = 1;
-    audio.playbackRate = 1;
-
-    vol.addEventListener('input', () => {
-      const v = Number(vol.value);
-      audio.volume = v / 100;
-      volVal.textContent = v + '%';
-    });
-    rate.addEventListener('input', () => {
-      const r = Number(rate.value);
-      audio.playbackRate = r;
-      rateVal.textContent = r.toFixed(1) + 'x';
-    });
+function updateActiveRow() {
+  tracks.forEach((t, i) => {
+    const row = document.getElementById(`row_${i}`);
+    const btn = document.getElementById(`playbtn_${i}`);
+    if (!row) return;
+    const isActive = i === currentIndex;
+    row.classList.toggle('active', isActive);
+    if (isActive && !audio.paused) {
+      btn.innerHTML = '<span class="eq"><span></span><span></span><span></span></span>';
+    } else {
+      btn.textContent = '▶';
+    }
   });
 }
+
+function onTrackTap(i) {
+  if (i === currentIndex) {
+    togglePlay();
+  } else {
+    loadTrack(i, true);
+  }
+  openSheet();
+}
+
+// ── playback core ────────────────────────────────────────────
+function loadTrack(i, autoplay) {
+  if (i < 0 || i >= tracks.length) return;
+  currentIndex = i;
+  const t = tracks[i];
+  audio.src = t.url;
+  npTitle.textContent = t.name;
+  npSub.textContent = `${i + 1} / ${tracks.length}`;
+  miniTitle.textContent = t.name;
+  seek.value = 0;
+  curTimeEl.textContent = '0:00';
+  durTimeEl.textContent = '0:00';
+  updateActiveRow();
+  miniPlayer.classList.add('show');
+  if (autoplay) audio.play().catch(() => {});
+}
+
+function togglePlay() {
+  if (currentIndex === -1 && tracks.length) { loadTrack(0, true); return; }
+  if (audio.paused) audio.play().catch(() => {}); else audio.pause();
+}
+
+prevBtn.addEventListener('click', () => { if (currentIndex > 0) loadTrack(currentIndex - 1, true); });
+nextBtn.addEventListener('click', () => { if (currentIndex < tracks.length - 1) loadTrack(currentIndex + 1, true); });
+playBigBtn.addEventListener('click', togglePlay);
+miniPlayBtn.addEventListener('click', (e) => { e.stopPropagation(); togglePlay(); });
+miniInner.addEventListener('click', () => openSheet());
+
+audio.addEventListener('play', () => { setPlayingUI(true); });
+audio.addEventListener('pause', () => { setPlayingUI(false); });
+audio.addEventListener('ended', () => {
+  if (currentIndex < tracks.length - 1) loadTrack(currentIndex + 1, true);
+  else setPlayingUI(false);
+});
+audio.addEventListener('loadedmetadata', () => {
+  durTimeEl.textContent = fmtTime(audio.duration);
+  seek.max = audio.duration || 0;
+  if (currentIndex >= 0) {
+    const el = document.getElementById(`meta_${currentIndex}`);
+    if (el) el.textContent = fmtTime(audio.duration);
+  }
+});
+audio.addEventListener('timeupdate', () => {
+  if (seeking) return;
+  curTimeEl.textContent = fmtTime(audio.currentTime);
+  const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+  seek.value = audio.currentTime;
+  seek.style.setProperty('--_p', pct + '%');
+  miniProgressFill.style.width = pct + '%';
+});
+
+function setPlayingUI(playing) {
+  playBigBtn.textContent = playing ? '⏸' : '▶';
+  miniPlayBtn.textContent = playing ? '⏸' : '▶';
+  disc.classList.toggle('playing', playing);
+  updateActiveRow();
+}
+
+seek.addEventListener('input', () => {
+  seeking = true;
+  curTimeEl.textContent = fmtTime(Number(seek.value));
+  const pct = audio.duration ? (Number(seek.value) / audio.duration) * 100 : 0;
+  seek.style.setProperty('--_p', pct + '%');
+});
+seek.addEventListener('change', () => {
+  audio.currentTime = Number(seek.value);
+  seeking = false;
+});
+
+volSlider.addEventListener('input', () => {
+  const v = Number(volSlider.value);
+  audio.volume = v / 100;
+  volLabel.textContent = v + '%';
+  volSlider.style.setProperty('--_p', v + '%');
+});
+
+speedChips.addEventListener('click', (e) => {
+  const btn = e.target.closest('.chip');
+  if (!btn) return;
+  const r = Number(btn.dataset.rate);
+  audio.playbackRate = r;
+  rateLabel.textContent = r.toFixed(2).replace(/\.?0+$/, '') + 'x';
+  [...speedChips.children].forEach(c => c.classList.toggle('active', c === btn));
+});
+
+// ── now playing sheet open/close ───────────────────────────────
+function openSheet() {
+  sheet.classList.add('show');
+  sheetBackdrop.classList.add('show');
+}
+function closeSheet() {
+  sheet.classList.remove('show');
+  sheetBackdrop.classList.remove('show');
+}
+sheetClose.addEventListener('click', closeSheet);
+sheetBackdrop.addEventListener('click', closeSheet);
+
+// init range fill vars
+volSlider.style.setProperty('--_p', '100%');
+seek.style.setProperty('--_p', '0%');
 </script>
 </body>
 </html>
