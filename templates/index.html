@@ -244,7 +244,7 @@
       <div class="upload-zone" id="drop">
         <div class="icon">＋</div>
         <div class="txt" id="dropText">新增 MP3（最多 {{ max_files }} 首）</div>
-        <div class="hint">點一下從手機檔案 / 相簿選取，僅支援 .mp3</div>
+        <div class="hint">點一下從手機檔案 / 相簿選取，僅支援 .mp3，超過 100MB 會自動分段上傳</div>
         <input type="file" id="fileInput" accept=".mp3,audio/mpeg" multiple>
       </div>
       <ul class="pending-list" id="pendingList"></ul>
@@ -446,6 +446,74 @@ function uploadOneFile(file, onProgress) {
   });
 }
 
+// 超過 CHUNK_THRESHOLD 的檔案改成切成多個 CHUNK_SIZE 小段依序上傳，
+// 每段各自逾時/重試，比一次送出一個超大請求更不容易在行動網路上失敗。
+const CHUNK_THRESHOLD = 100 * 1024 * 1024; // 100MB
+const CHUNK_SIZE = 8 * 1024 * 1024;        // 每段 8MB
+
+function genUploadId() {
+  let s = '';
+  for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
+  return s;
+}
+
+function uploadOneChunk(uploadId, filename, chunkIndex, totalChunks, blob, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload_chunk');
+    xhr.timeout = 60000;
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { /* ignore */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data.error || `分段上傳失敗（HTTP ${xhr.status || '無回應'}）`));
+    };
+    xhr.onerror = () => reject(new Error('網路連線中斷，請確認訊號後重試'));
+    xhr.ontimeout = () => reject(new Error('上傳逾時，請確認網路連線後重試'));
+    const fd = new FormData();
+    fd.append('upload_id', uploadId);
+    fd.append('filename', filename);
+    fd.append('chunk_index', String(chunkIndex));
+    fd.append('total_chunks', String(totalChunks));
+    fd.append('chunk', blob);
+    xhr.send(fd);
+  });
+}
+
+async function uploadChunkedFile(file, onProgress) {
+  const uploadId = genUploadId();
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const blob = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
+    let lastErr = null;
+    // 單一分段失敗時重試一次，避免行動網路小斷線就整個上傳失敗
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await uploadOneChunk(uploadId, file.name, i, totalChunks, blob, (frac) => {
+          onProgress(Math.round(((i + frac) / totalChunks) * 100), i + 1, totalChunks);
+        });
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (lastErr) throw lastErr;
+  }
+
+  const res = await fetch('/api/upload_chunk_finish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ upload_id: uploadId, filename: file.name, total_chunks: totalChunks }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || '合併檔案失敗');
+  return data.tracks[0];
+}
+
 uploadBtn.addEventListener('click', async () => {
   if (!pendingFiles.length) return;
   uploadBtn.disabled = true;
@@ -454,15 +522,22 @@ uploadBtn.addEventListener('click', async () => {
   const failedNames = [];
 
   for (let i = 0; i < pendingFiles.length; i++) {
+    const file = pendingFiles[i];
     uploadBtn.textContent = `上傳中… (${i + 1}/${pendingFiles.length})`;
     setPendingStatus(i, 'up', '0%');
     try {
-      const t = await uploadOneFile(pendingFiles[i], (pct) => setPendingStatus(i, 'up', pct + '%'));
+      let t;
+      if (file.size > CHUNK_THRESHOLD) {
+        t = await uploadChunkedFile(file, (pct, curChunk, totalChunks) =>
+          setPendingStatus(i, 'up', `${pct}%（${curChunk}/${totalChunks}段）`));
+      } else {
+        t = await uploadOneFile(file, (pct) => setPendingStatus(i, 'up', pct + '%'));
+      }
       setPendingStatus(i, 'ok', '✓ 完成');
       newTracks.push({ name: t.name, url: t.url });
     } catch (e) {
       setPendingStatus(i, 'fail', '✗ 失敗');
-      failedNames.push(`${pendingFiles[i].name}（${e.message}）`);
+      failedNames.push(`${file.name}（${e.message}）`);
     }
   }
 
