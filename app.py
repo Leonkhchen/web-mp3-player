@@ -120,6 +120,16 @@ def _chunk_dir(upload_id: str) -> Path:
     return p
 
 
+@app.after_request
+def _no_cache_html(resp):
+    # 頁面的邏輯（含分段上傳的 JS）都內嵌在 HTML 裡，手機瀏覽器（尤其 iOS
+    # Safari）常會快取整頁 HTML，導致改版後手機還在跑舊版程式碼。
+    # 只針對 HTML 頁面關閉快取，音檔串流（audio/mpeg）不受影響。
+    if resp.content_type and resp.content_type.startswith("text/html"):
+        resp.headers["Cache-Control"] = "no-store, must-revalidate"
+    return resp
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  路由
 # ═══════════════════════════════════════════════════════════════════════════════
