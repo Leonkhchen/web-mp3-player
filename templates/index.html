@@ -39,6 +39,28 @@
     font-size:.78rem; color:var(--text-dim); line-height:1.5; margin-bottom:1.1rem;
   }
 
+  /* ── source tabs ──────────────────────────────────────────── */
+  .source-tabs{display:flex; gap:.5rem; margin-bottom:1rem;}
+  .source-tab{
+    flex:1; text-align:center; padding:.65rem .5rem; border-radius:12px; cursor:pointer;
+    font-size:.85rem; font-weight:650; color:var(--text-dim); background:var(--card);
+    border:1px solid var(--border);
+  }
+  .source-tab.active{color:#fff; background:linear-gradient(135deg, var(--accent), var(--accent-2)); border-color:transparent;}
+
+  .drive-rows{display:flex; flex-direction:column; gap:.6rem;}
+  .drive-row{display:flex; gap:.5rem; align-items:center;}
+  .drive-row input[type=text]{
+    flex:1; min-width:0; background:var(--card-2); border:1px solid var(--border); border-radius:10px;
+    padding:.6rem .7rem; font-size:.85rem; color:var(--text); outline:none;
+  }
+  .drive-row input[type=text]::placeholder{color:var(--text-faint);}
+  .drive-row input.link-input{flex:1.6;}
+  .drive-row .remove-row{
+    width:30px; height:30px; border-radius:50%; border:none; background:var(--card-2);
+    color:var(--text-dim); font-size:.9rem; flex-shrink:0; cursor:pointer;
+  }
+
   main{padding:0 1.2rem;}
 
   .card{
@@ -228,24 +250,43 @@
   </header>
 
   <main>
-    <div class="local-note">
-      📱 <span>檔案完全不會上傳到伺服器，只在這個瀏覽器分頁裡本機播放，關閉分頁或重新整理後需要重新選取一次。</span>
+    <div class="source-tabs">
+      <div class="source-tab active" id="tabLocal">📱 本機檔案</div>
+      <div class="source-tab" id="tabDrive">☁️ Google 雲端硬碟</div>
     </div>
 
-    <div class="card" id="uploadCard">
-      <div class="upload-zone" id="drop">
-        <div class="icon">＋</div>
-        <div class="txt" id="dropText">選擇 MP3（最多 {{ max_files }} 首）</div>
-        <div class="hint">點一下從手機檔案 / 相簿選取，僅支援 .mp3，檔案大小不限</div>
-        <input type="file" id="fileInput" accept=".mp3,audio/mpeg" multiple>
+    <div id="localPane">
+      <div class="local-note">
+        📱 <span>檔案完全不會上傳到伺服器，只在這個瀏覽器分頁裡本機播放，關閉分頁或重新整理後需要重新選取一次。</span>
       </div>
-      <div class="err-msg hidden" id="uploadErr"></div>
+      <div class="card" id="uploadCard">
+        <div class="upload-zone" id="drop">
+          <div class="icon">＋</div>
+          <div class="txt" id="dropText">選擇 MP3（最多 {{ max_files }} 首）</div>
+          <div class="hint">點一下從手機檔案 / 相簿選取，僅支援 .mp3，檔案大小不限</div>
+          <input type="file" id="fileInput" accept=".mp3,audio/mpeg" multiple>
+        </div>
+        <div class="err-msg hidden" id="uploadErr"></div>
+      </div>
+    </div>
+
+    <div id="drivePane" class="hidden">
+      <div class="local-note">
+        ☁️ <span>Google 雲端硬碟的檔案要先設定共用權限為「知道連結的使用者」可檢視，才能在這裡播放；
+        檔案太大（約 25MB 以上）Google 可能會擋下直接讀取，導致無法播放。</span>
+      </div>
+      <div class="card" id="driveCard">
+        <div class="drive-rows" id="driveRows"></div>
+        <button class="ghost" id="addDriveRowBtn">＋ 新增連結（最多 {{ max_files }} 個）</button>
+        <div class="err-msg hidden" id="driveErr"></div>
+        <button class="primary" id="driveSubmitBtn">加入播放清單</button>
+      </div>
     </div>
 
     <div id="playlistSection" class="hidden">
       <div class="section-title">播放清單</div>
       <div id="trackList"></div>
-      <button class="ghost" id="addMoreBtn">＋ 重新選擇 MP3</button>
+      <button class="ghost" id="addMoreBtn">＋ 重新選擇音樂</button>
     </div>
   </main>
 </div>
@@ -310,11 +351,23 @@
 const MAX_FILES = {{ max_files }};
 
 // ── elements ──────────────────────────────────────────────────
+const tabLocal = document.getElementById('tabLocal');
+const tabDrive = document.getElementById('tabDrive');
+const localPane = document.getElementById('localPane');
+const drivePane = document.getElementById('drivePane');
+
 const drop = document.getElementById('drop');
 const dropText = document.getElementById('dropText');
 const fileInput = document.getElementById('fileInput');
 const uploadErr = document.getElementById('uploadErr');
 const uploadCard = document.getElementById('uploadCard');
+
+const driveCard = document.getElementById('driveCard');
+const driveRowsEl = document.getElementById('driveRows');
+const addDriveRowBtn = document.getElementById('addDriveRowBtn');
+const driveErr = document.getElementById('driveErr');
+const driveSubmitBtn = document.getElementById('driveSubmitBtn');
+
 const playlistSection = document.getElementById('playlistSection');
 const trackListEl = document.getElementById('trackList');
 const addMoreBtn = document.getElementById('addMoreBtn');
@@ -360,16 +413,56 @@ let seeking = false;
 const audio = new Audio();
 audio.preload = 'metadata';
 
-// ── 選檔流程（完全本機端，不上傳）────────────────────────────────
+// ── 來源分頁切換（本機檔案 / Google 雲端硬碟連結）──────────────────
+function showPane(which) {
+  const isLocal = which === 'local';
+  tabLocal.classList.toggle('active', isLocal);
+  tabDrive.classList.toggle('active', !isLocal);
+  localPane.classList.toggle('hidden', !isLocal);
+  drivePane.classList.toggle('hidden', isLocal);
+}
+tabLocal.addEventListener('click', () => showPane('local'));
+tabDrive.addEventListener('click', () => showPane('drive'));
+
+addMoreBtn.addEventListener('click', () => {
+  localPane.classList.remove('hidden');
+  drivePane.classList.toggle('hidden', !tabDrive.classList.contains('active'));
+  localPane.classList.toggle('hidden', !tabLocal.classList.contains('active'));
+  uploadCard.classList.remove('hidden');
+  document.querySelector('.source-tabs').scrollIntoView({behavior:'smooth'});
+});
+
+// 換一批新的播放清單時共用的收尾動作：釋放舊的本機 Blob URL、
+// 重置播放狀態、渲染清單、切回播放清單畫面。
+function applyNewTracks(newTracks) {
+  tracks.forEach(t => { if (t.url.startsWith('blob:')) URL.revokeObjectURL(t.url); });
+  audio.pause();
+  currentIndex = -1;
+  miniPlayer.classList.remove('show');
+
+  tracks = newTracks;
+  renderTrackList();
+  playlistSection.classList.remove('hidden');
+  uploadCard.classList.add('hidden');
+  driveCard.classList.add('hidden');
+  playlistSection.scrollIntoView({behavior:'smooth'});
+}
+
+function showErr(msg) { uploadErr.textContent = msg; uploadErr.classList.toggle('hidden', !msg); }
+function showDriveErr(msg) { driveErr.textContent = msg; driveErr.classList.toggle('hidden', !msg); }
+function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtTime(t) {
+  if (!isFinite(t) || t < 0) return '0:00';
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+// ── 選項 1：本機檔案（完全不上傳，瀏覽器本機播放）────────────────
 drop.addEventListener('click', () => fileInput.click());
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); setFiles(e.dataTransfer.files); });
 fileInput.addEventListener('change', () => setFiles(fileInput.files));
-addMoreBtn.addEventListener('click', () => {
-  uploadCard.classList.remove('hidden');
-  uploadCard.scrollIntoView({behavior:'smooth'});
-});
 
 function setFiles(fileListLike) {
   const all = Array.from(fileListLike);
@@ -380,30 +473,78 @@ function setFiles(fileListLike) {
   const picked = mp3s.slice(0, MAX_FILES);
   if (!picked.length) return;
 
-  // 換一批新的播放清單前，先釋放舊的 Blob URL，避免分頁開久了記憶體一直長
-  tracks.forEach(t => URL.revokeObjectURL(t.url));
-  audio.pause();
-  currentIndex = -1;
-  miniPlayer.classList.remove('show');
-
-  tracks = picked.map(f => ({
+  applyNewTracks(picked.map(f => ({
     name: f.name.replace(/\.mp3$/i, ''),
     url: URL.createObjectURL(f),
-  }));
-  renderTrackList();
-  playlistSection.classList.remove('hidden');
-  uploadCard.classList.add('hidden');
+  })));
   fileInput.value = '';
-  playlistSection.scrollIntoView({behavior:'smooth'});
 }
 
-function showErr(msg) { uploadErr.textContent = msg; uploadErr.classList.toggle('hidden', !msg); }
-function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function fmtTime(t) {
-  if (!isFinite(t) || t < 0) return '0:00';
-  const m = Math.floor(t / 60), s = Math.floor(t % 60);
-  return `${m}:${String(s).padStart(2,'0')}`;
+// ── 選項 2：Google 雲端硬碟分享連結 ─────────────────────────────
+function driveRowHtml() {
+  return `<div class="drive-row">
+    <input type="text" class="link-input" placeholder="貼上 Google 雲端硬碟分享連結">
+    <input type="text" class="name-input" placeholder="顯示名稱（選填）">
+    <button type="button" class="remove-row" title="移除">✕</button>
+  </div>`;
 }
+function addDriveRow() {
+  if (driveRowsEl.children.length >= MAX_FILES) return;
+  driveRowsEl.insertAdjacentHTML('beforeend', driveRowHtml());
+  addDriveRowBtn.disabled = driveRowsEl.children.length >= MAX_FILES;
+}
+driveRowsEl.addEventListener('click', (e) => {
+  if (e.target.classList.contains('remove-row')) {
+    if (driveRowsEl.children.length > 1) e.target.closest('.drive-row').remove();
+    else { e.target.closest('.drive-row').querySelector('.link-input').value = ''; e.target.closest('.drive-row').querySelector('.name-input').value = ''; }
+    addDriveRowBtn.disabled = driveRowsEl.children.length >= MAX_FILES;
+  }
+});
+addDriveRowBtn.addEventListener('click', addDriveRow);
+addDriveRow(); // 預設先給一列
+
+// 支援常見的幾種 Google 雲端硬碟分享連結格式，抓出檔案 ID：
+//   https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+//   https://drive.google.com/open?id=FILE_ID
+//   https://drive.google.com/uc?id=FILE_ID
+function parseDriveFileId(link) {
+  let m = link.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (m) return m[1];
+  m = link.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+  if (m) return m[1];
+  return null;
+}
+
+driveSubmitBtn.addEventListener('click', () => {
+  showDriveErr('');
+  const rows = [...driveRowsEl.querySelectorAll('.drive-row')];
+  const newTracks = [];
+  const badRows = [];
+
+  rows.forEach((row, i) => {
+    const link = row.querySelector('.link-input').value.trim();
+    const name = row.querySelector('.name-input').value.trim();
+    if (!link) return;
+    const fileId = parseDriveFileId(link);
+    if (!fileId) { badRows.push(i + 1); return; }
+    newTracks.push({
+      name: name || `雲端音樂 ${newTracks.length + 1}`,
+      // confirm=t 是常見繞過 Google 雲端硬碟「無法掃描病毒」提示頁的做法，
+      // 對稍大的檔案比較有機會直接拿到音檔本身而不是提示頁面
+      url: `https://drive.google.com/uc?export=download&confirm=t&id=${fileId}`,
+    });
+  });
+
+  if (badRows.length) {
+    showDriveErr(`第 ${badRows.join('、')} 個連結格式看起來不對，請確認是 Google 雲端硬碟的分享連結`);
+    return;
+  }
+  if (!newTracks.length) {
+    showDriveErr('請至少貼上一個連結');
+    return;
+  }
+  applyNewTracks(newTracks);
+});
 
 // ── playlist rendering ──────────────────────────────────────
 function renderTrackList() {
@@ -497,6 +638,17 @@ audio.addEventListener('timeupdate', () => {
   seek.value = audio.currentTime;
   seek.style.setProperty('--_p', pct + '%');
   miniProgressFill.style.width = pct + '%';
+});
+audio.addEventListener('error', () => {
+  if (currentIndex < 0) return;
+  const t = tracks[currentIndex];
+  const isDrive = t && !t.url.startsWith('blob:');
+  npSub.textContent = isDrive
+    ? '⚠️ 無法播放，請確認雲端硬碟分享權限與檔案大小'
+    : '⚠️ 無法播放此檔案';
+  const el = document.getElementById(`meta_${currentIndex}`);
+  if (el) el.textContent = '⚠️ 無法播放';
+  setPlayingUI(false);
 });
 
 function setPlayingUI(playing) {
