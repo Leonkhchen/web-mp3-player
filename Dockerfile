@@ -10,9 +10,7 @@ COPY . .
 ENV PORT=5060
 EXPOSE 5060
 
-# 用 gunicorn 而不是 Flask 內建的開發用伺服器：
-# Flask 自帶的 dev server 不是設計給正式環境用的，串流大型 mp3 檔案時
-# （尤其是行動網路、速度較慢、需要維持連線較久）容易不穩定。
-# --timeout 拉長是因為串流大檔案給網路較慢的手機時，單一 worker 忙著
-# 傳輸資料的時間可能比預設的 30 秒還久。
-CMD ["sh", "-c", "gunicorn -w 2 --threads 4 --timeout 300 -b 0.0.0.0:${PORT:-5060} app:app"]
+# 用 gunicorn 而不是 Flask 內建的開發用伺服器（該 dev server 官方就註明
+# 不建議用在正式環境）。頁面本身很輕量（沒有檔案上傳/串流），維持
+# 保守的預設值即可。
+CMD ["sh", "-c", "gunicorn -w 2 --threads 4 -b 0.0.0.0:${PORT:-5060} app:app"]

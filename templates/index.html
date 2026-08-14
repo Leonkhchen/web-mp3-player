@@ -33,6 +33,11 @@
   }
   header.top h1{font-size:1.5rem; margin:0; font-weight:800; letter-spacing:-.02em;}
   header.top .sub{color:var(--text-dim); font-size:.82rem; margin-top:.15rem;}
+  .local-note{
+    display:flex; gap:.5rem; align-items:flex-start; background:var(--card-2);
+    border:1px solid var(--border); border-radius:12px; padding:.7rem .8rem;
+    font-size:.78rem; color:var(--text-dim); line-height:1.5; margin-bottom:1.1rem;
+  }
 
   main{padding:0 1.2rem;}
 
@@ -55,23 +60,6 @@
   .upload-zone .txt{font-weight:700; font-size:.95rem;}
   .upload-zone .hint{color:var(--text-dim); font-size:.8rem; margin-top:.3rem;}
   .upload-zone input{display:none;}
-
-  .pending-list{list-style:none; margin:.9rem 0 0; padding:0;}
-  .pending-list li{
-    display:flex; align-items:center; gap:.6rem; padding:.5rem .2rem;
-    font-size:.85rem; color:var(--text-dim); border-bottom:1px solid var(--border);
-  }
-  .pending-list li:last-child{border-bottom:none;}
-  .pending-list .pill{
-    background:var(--card-2); color:var(--text); border-radius:8px; padding:.15rem .5rem;
-    font-size:.72rem; flex-shrink:0;
-  }
-  .pending-list .pname{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .pending-list .pstatus{font-size:.72rem; flex-shrink:0; min-width:3.6em; text-align:right;}
-  .pending-list .pstatus.wait{color:var(--text-faint);}
-  .pending-list .pstatus.up{color:var(--accent);}
-  .pending-list .pstatus.ok{color:var(--ok);}
-  .pending-list .pstatus.fail{color:var(--err);}
 
   .err-msg{color:var(--err); font-size:.82rem; margin-top:.7rem;}
 
@@ -236,20 +224,22 @@
 <div class="shell">
   <header class="top">
     <h1>🎵 我的音樂</h1>
-    <div class="sub">上傳手機裡的 MP3，直接在網頁上播放</div>
+    <div class="sub">選取手機裡的 MP3，直接在網頁上播放</div>
   </header>
 
   <main>
+    <div class="local-note">
+      📱 <span>檔案完全不會上傳到伺服器，只在這個瀏覽器分頁裡本機播放，關閉分頁或重新整理後需要重新選取一次。</span>
+    </div>
+
     <div class="card" id="uploadCard">
       <div class="upload-zone" id="drop">
         <div class="icon">＋</div>
-        <div class="txt" id="dropText">新增 MP3（最多 {{ max_files }} 首）</div>
-        <div class="hint">點一下從手機檔案 / 相簿選取，僅支援 .mp3，超過 100MB 會自動分段上傳</div>
+        <div class="txt" id="dropText">選擇 MP3（最多 {{ max_files }} 首）</div>
+        <div class="hint">點一下從手機檔案 / 相簿選取，僅支援 .mp3，檔案大小不限</div>
         <input type="file" id="fileInput" accept=".mp3,audio/mpeg" multiple>
       </div>
-      <ul class="pending-list" id="pendingList"></ul>
       <div class="err-msg hidden" id="uploadErr"></div>
-      <button class="primary" id="uploadBtn" disabled>加入播放清單</button>
     </div>
 
     <div id="playlistSection" class="hidden">
@@ -323,9 +313,7 @@ const MAX_FILES = {{ max_files }};
 const drop = document.getElementById('drop');
 const dropText = document.getElementById('dropText');
 const fileInput = document.getElementById('fileInput');
-const pendingList = document.getElementById('pendingList');
 const uploadErr = document.getElementById('uploadErr');
-const uploadBtn = document.getElementById('uploadBtn');
 const uploadCard = document.getElementById('uploadCard');
 const playlistSection = document.getElementById('playlistSection');
 const trackListEl = document.getElementById('trackList');
@@ -365,15 +353,14 @@ if (isIOS) {
 }
 const speedChips = document.getElementById('speedChips');
 
-let pendingFiles = [];
-let tracks = [];       // [{name, url}]
+let tracks = [];       // [{name, url}] url 是本機 Blob URL，檔案從未離開裝置
 let currentIndex = -1;
 let seeking = false;
 
 const audio = new Audio();
 audio.preload = 'metadata';
 
-// ── upload flow ──────────────────────────────────────────────
+// ── 選檔流程（完全本機端，不上傳）────────────────────────────────
 drop.addEventListener('click', () => fileInput.click());
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
@@ -389,24 +376,25 @@ function setFiles(fileListLike) {
   const mp3s = all.filter(f => f.name.toLowerCase().endsWith('.mp3'));
   showErr('');
   if (all.length !== mp3s.length) showErr('已略過非 .mp3 的檔案');
-  if (mp3s.length > MAX_FILES) showErr(`一次最多上傳 ${MAX_FILES} 首，已取前 ${MAX_FILES} 首`);
-  pendingFiles = mp3s.slice(0, MAX_FILES);
-  renderPendingList();
-  dropText.textContent = pendingFiles.length ? `已選擇 ${pendingFiles.length} 首` : `新增 MP3（最多 ${MAX_FILES} 首）`;
-  uploadBtn.disabled = pendingFiles.length === 0;
-}
+  if (mp3s.length > MAX_FILES) showErr(`一次最多選 ${MAX_FILES} 首，已取前 ${MAX_FILES} 首`);
+  const picked = mp3s.slice(0, MAX_FILES);
+  if (!picked.length) return;
 
-function renderPendingList() {
-  pendingList.innerHTML = pendingFiles.map((f, i) =>
-    `<li id="pend_${i}">🎵 <span class="pname">${escapeHtml(f.name)}</span>
-     <span class="pill">${(f.size/1024/1024).toFixed(1)}MB</span>
-     <span class="pstatus wait" id="pstat_${i}">等待中</span></li>`
-  ).join('');
-}
+  // 換一批新的播放清單前，先釋放舊的 Blob URL，避免分頁開久了記憶體一直長
+  tracks.forEach(t => URL.revokeObjectURL(t.url));
+  audio.pause();
+  currentIndex = -1;
+  miniPlayer.classList.remove('show');
 
-function setPendingStatus(i, cls, text) {
-  const el = document.getElementById(`pstat_${i}`);
-  if (el) { el.className = 'pstatus ' + cls; el.textContent = text; }
+  tracks = picked.map(f => ({
+    name: f.name.replace(/\.mp3$/i, ''),
+    url: URL.createObjectURL(f),
+  }));
+  renderTrackList();
+  playlistSection.classList.remove('hidden');
+  uploadCard.classList.add('hidden');
+  fileInput.value = '';
+  playlistSection.scrollIntoView({behavior:'smooth'});
 }
 
 function showErr(msg) { uploadErr.textContent = msg; uploadErr.classList.toggle('hidden', !msg); }
@@ -416,153 +404,6 @@ function fmtTime(t) {
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
   return `${m}:${String(s).padStart(2,'0')}`;
 }
-
-// 用 XMLHttpRequest（而非 fetch）逐一上傳每首歌：
-// - 一次一個檔案，避免手機行動網路上傳大型 multipart 請求時逾時／中斷
-//   （這是 iPhone Safari 常見的 fetch "Load failed" 主因之一）
-// - 有明確的逾時設定與進度回報，錯誤訊息也更明確
-function uploadOneFile(file, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/upload');
-    xhr.timeout = 60000; // 60 秒，行動網路上傳單一 mp3 通常足夠
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => {
-      let data = {};
-      try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { /* ignore */ }
-      if (xhr.status >= 200 && xhr.status < 300 && data.tracks) {
-        resolve(data.tracks[0]);
-      } else {
-        reject(new Error(data.error || `上傳失敗（HTTP ${xhr.status || '無回應'}）`));
-      }
-    };
-    xhr.onerror = () => reject(new Error('網路連線中斷，請確認訊號後重試'));
-    xhr.ontimeout = () => reject(new Error('上傳逾時，請確認網路連線後重試'));
-    const fd = new FormData();
-    fd.append('files', file);
-    xhr.send(fd);
-  });
-}
-
-// 超過 CHUNK_THRESHOLD 的檔案改成切成多個 CHUNK_SIZE 小段依序上傳，
-// 每段各自逾時/重試，比一次送出一個超大請求更不容易在行動網路上失敗。
-const CHUNK_THRESHOLD = 100 * 1024 * 1024; // 100MB
-const CHUNK_SIZE = 8 * 1024 * 1024;        // 每段 8MB
-
-function genUploadId() {
-  let s = '';
-  for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
-  return s;
-}
-
-function uploadOneChunk(uploadId, filename, chunkIndex, totalChunks, blob, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/upload_chunk');
-    xhr.timeout = 60000;
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
-    xhr.onload = () => {
-      let data = {};
-      try { data = JSON.parse(xhr.responseText || '{}'); } catch (e) { /* ignore */ }
-      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-      else reject(new Error(data.error || `分段上傳失敗（HTTP ${xhr.status || '無回應'}）`));
-    };
-    xhr.onerror = () => reject(new Error('網路連線中斷，請確認訊號後重試'));
-    xhr.ontimeout = () => reject(new Error('上傳逾時，請確認網路連線後重試'));
-    const fd = new FormData();
-    fd.append('upload_id', uploadId);
-    fd.append('filename', filename);
-    fd.append('chunk_index', String(chunkIndex));
-    fd.append('total_chunks', String(totalChunks));
-    fd.append('chunk', blob);
-    xhr.send(fd);
-  });
-}
-
-async function uploadChunkedFile(file, onProgress) {
-  const uploadId = genUploadId();
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * CHUNK_SIZE;
-    const blob = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
-    let lastErr = null;
-    // 單一分段失敗時重試一次，避免行動網路小斷線就整個上傳失敗
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        await uploadOneChunk(uploadId, file.name, i, totalChunks, blob, (frac) => {
-          onProgress(Math.round(((i + frac) / totalChunks) * 100), i + 1, totalChunks);
-        });
-        lastErr = null;
-        break;
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-    if (lastErr) throw lastErr;
-  }
-
-  const res = await fetch('/api/upload_chunk_finish', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ upload_id: uploadId, filename: file.name, total_chunks: totalChunks }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || '合併檔案失敗');
-  return data.tracks[0];
-}
-
-uploadBtn.addEventListener('click', async () => {
-  if (!pendingFiles.length) return;
-  uploadBtn.disabled = true;
-  showErr('');
-  const newTracks = [];
-  const failedNames = [];
-
-  for (let i = 0; i < pendingFiles.length; i++) {
-    const file = pendingFiles[i];
-    uploadBtn.textContent = `上傳中… (${i + 1}/${pendingFiles.length})`;
-    setPendingStatus(i, 'up', '0%');
-    try {
-      let t;
-      if (file.size > CHUNK_THRESHOLD) {
-        t = await uploadChunkedFile(file, (pct, curChunk, totalChunks) =>
-          setPendingStatus(i, 'up', `${pct}%（${curChunk}/${totalChunks}段）`));
-      } else {
-        t = await uploadOneFile(file, (pct) => setPendingStatus(i, 'up', pct + '%'));
-      }
-      setPendingStatus(i, 'ok', '✓ 完成');
-      newTracks.push({ name: t.name, url: t.url });
-    } catch (e) {
-      setPendingStatus(i, 'fail', '✗ 失敗');
-      failedNames.push(`${file.name}（${e.message}）`);
-    }
-  }
-
-  if (newTracks.length) {
-    tracks = newTracks;
-    currentIndex = -1;
-    renderTrackList();
-    playlistSection.classList.remove('hidden');
-    playlistSection.scrollIntoView({behavior:'smooth'});
-  }
-  if (failedNames.length) {
-    showErr('部分檔案上傳失敗：' + failedNames.join('；'));
-  } else {
-    uploadCard.classList.add('hidden');
-  }
-
-  if (!failedNames.length) {
-    pendingFiles = [];
-    pendingList.innerHTML = '';
-    fileInput.value = '';
-    dropText.textContent = `新增 MP3（最多 ${MAX_FILES} 首）`;
-  }
-  uploadBtn.disabled = pendingFiles.length === 0;
-  uploadBtn.textContent = '加入播放清單';
-});
 
 // ── playlist rendering ──────────────────────────────────────
 function renderTrackList() {
