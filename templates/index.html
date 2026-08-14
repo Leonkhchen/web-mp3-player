@@ -202,13 +202,20 @@
   .seek-row input[type=range]{width:100%;}
   .time-row{display:flex; justify-content:space-between; font-size:.72rem; color:var(--text-dim); margin-top:.2rem;}
 
-  .transport{display:flex; align-items:center; justify-content:center; gap:1.6rem; margin:1.3rem 0 1.5rem;}
+  .transport{display:flex; align-items:center; justify-content:center; gap:.9rem; margin:1.3rem 0 1.5rem;}
   .transport button{border:none; background:transparent; color:var(--text); cursor:pointer;}
-  .transport .step{font-size:1.5rem; color:var(--text-dim);}
+  .transport .step{font-size:1.4rem; color:var(--text-dim); flex-shrink:0;}
+  .transport .skip{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    width:44px; height:44px; border-radius:50%; background:var(--card-2); color:var(--text-dim);
+    flex-shrink:0; line-height:1;
+  }
+  .transport .skip .skip-icon{font-size:1.15rem;}
+  .transport .skip .skip-n{font-size:.6rem; font-weight:700; margin-top:1px;}
   .transport .play-big{
     width:66px; height:66px; border-radius:50%; display:flex; align-items:center; justify-content:center;
     font-size:1.6rem; background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#fff;
-    box-shadow:0 10px 26px -10px rgba(124,108,255,.8);
+    box-shadow:0 10px 26px -10px rgba(124,108,255,.8); flex-shrink:0;
   }
 
   .ctrl-block{margin-bottom:1.1rem;}
@@ -231,13 +238,6 @@
     box-shadow:0 2px 8px rgba(0,0,0,.4); cursor:pointer; margin-top:-6.5px;
   }
   input[type=range]::-moz-range-thumb{width:18px; height:18px; border-radius:50%; background:#fff; border:none; cursor:pointer;}
-
-  .speed-chips{display:flex; gap:.45rem; flex-wrap:wrap;}
-  .chip{
-    border:1px solid var(--border); background:var(--card-2); color:var(--text-dim);
-    border-radius:999px; padding:.35rem .8rem; font-size:.8rem; font-weight:650; cursor:pointer;
-  }
-  .chip.active{background:var(--accent); border-color:var(--accent); color:#fff;}
 
   .hidden{display:none !important;}
 </style>
@@ -324,7 +324,9 @@
 
   <div class="transport">
     <button class="step" id="prevBtn">⏮</button>
+    <button class="skip" id="rewindBtn"><span class="skip-icon">⟲</span><span class="skip-n">20</span></button>
     <button class="play-big" id="playBigBtn">▶</button>
+    <button class="skip" id="forwardBtn"><span class="skip-icon">⟳</span><span class="skip-n">20</span></button>
     <button class="step" id="nextBtn">⏭</button>
   </div>
 
@@ -336,14 +338,7 @@
 
   <div class="ctrl-block">
     <div class="ctrl-title"><span>⏩ 播放速度</span><b id="rateLabel">1.0x</b></div>
-    <div class="speed-chips" id="speedChips">
-      <button class="chip" data-rate="0.5">0.5x</button>
-      <button class="chip" data-rate="0.75">0.75x</button>
-      <button class="chip active" data-rate="1">1x</button>
-      <button class="chip" data-rate="1.25">1.25x</button>
-      <button class="chip" data-rate="1.5">1.5x</button>
-      <button class="chip" data-rate="2">2x</button>
-    </div>
+    <div class="ctrl-row"><input type="range" id="rateSlider" min="0.5" max="3" value="1" step="0.1"></div>
   </div>
 </div>
 
@@ -389,6 +384,8 @@ const curTimeEl = document.getElementById('curTime');
 const durTimeEl = document.getElementById('durTime');
 const prevBtn = document.getElementById('prevBtn');
 const nextBtn = document.getElementById('nextBtn');
+const rewindBtn = document.getElementById('rewindBtn');
+const forwardBtn = document.getElementById('forwardBtn');
 const playBigBtn = document.getElementById('playBigBtn');
 const volSlider = document.getElementById('volSlider');
 const volLabel = document.getElementById('volLabel');
@@ -404,7 +401,7 @@ if (isIOS) {
   volLabel.parentElement.classList.add('hidden');
   iosVolNote.classList.remove('hidden');
 }
-const speedChips = document.getElementById('speedChips');
+const rateSlider = document.getElementById('rateSlider');
 
 let tracks = [];       // [{name, url}] url 是本機 Blob URL，檔案從未離開裝置
 let currentIndex = -1;
@@ -613,6 +610,12 @@ function togglePlay() {
 
 prevBtn.addEventListener('click', () => { if (currentIndex > 0) loadTrack(currentIndex - 1, true); });
 nextBtn.addEventListener('click', () => { if (currentIndex < tracks.length - 1) loadTrack(currentIndex + 1, true); });
+rewindBtn.addEventListener('click', () => { if (currentIndex >= 0) audio.currentTime = Math.max(0, audio.currentTime - 20); });
+forwardBtn.addEventListener('click', () => {
+  if (currentIndex < 0) return;
+  const dur = isFinite(audio.duration) ? audio.duration : Infinity;
+  audio.currentTime = Math.min(dur, audio.currentTime + 20);
+});
 playBigBtn.addEventListener('click', togglePlay);
 miniPlayBtn.addEventListener('click', (e) => { e.stopPropagation(); togglePlay(); });
 miniInner.addEventListener('click', () => openSheet());
@@ -676,13 +679,12 @@ volSlider.addEventListener('input', () => {
   volSlider.style.setProperty('--_p', v + '%');
 });
 
-speedChips.addEventListener('click', (e) => {
-  const btn = e.target.closest('.chip');
-  if (!btn) return;
-  const r = Number(btn.dataset.rate);
+rateSlider.addEventListener('input', () => {
+  const r = Number(rateSlider.value);
   audio.playbackRate = r;
-  rateLabel.textContent = r.toFixed(2).replace(/\.?0+$/, '') + 'x';
-  [...speedChips.children].forEach(c => c.classList.toggle('active', c === btn));
+  rateLabel.textContent = r.toFixed(1) + 'x';
+  const pct = ((r - 0.5) / (3 - 0.5)) * 100;
+  rateSlider.style.setProperty('--_p', pct + '%');
 });
 
 // ── now playing sheet open/close ───────────────────────────────
@@ -700,6 +702,7 @@ sheetBackdrop.addEventListener('click', closeSheet);
 // init range fill vars
 volSlider.style.setProperty('--_p', '100%');
 seek.style.setProperty('--_p', '0%');
+rateSlider.style.setProperty('--_p', ((1 - 0.5) / (3 - 0.5) * 100) + '%');
 </script>
 </body>
 </html>
