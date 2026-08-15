@@ -33,9 +33,18 @@ from functools import wraps
 import requests
 from flask import (Flask, Response, jsonify, redirect, render_template,
                     request, session, stream_with_context, url_for)
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(32))
+
+# Zeabur（跟大多數 PaaS 一樣）在自己的反向代理終止 HTTPS，轉給我們的
+# 容器時用的是普通 HTTP，所以 Flask 預設看到的 request.scheme 會是
+# "http"。ProxyFix 讓 Flask 改信任代理送來的 X-Forwarded-Proto /
+# X-Forwarded-Host 表頭，這樣 url_for(..., _external=True) 產生的
+# OAuth redirect_uri 才會是正確的 https:// 網址，跟 Google Cloud
+# Console 裡登記的完全一致，否則會拿到 redirect_uri_mismatch 錯誤。
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 MAX_FILES = 5
