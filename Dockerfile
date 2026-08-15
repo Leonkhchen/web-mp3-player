@@ -19,4 +19,10 @@ EXPOSE 5060
 # callback 請求的那個 worker 裡，下一次請求被路由到另一個 worker 時
 # 就會找不到 token、變成一直被要求重新登入。維持單一 worker + 多執行緒
 # 才能確保所有請求共用同一份記憶體。
-CMD ["sh", "-c", "gunicorn -w 1 --threads 4 -b 0.0.0.0:${PORT:-5060} app:app"]
+#
+# --worker-class gthread 一定要加：光寫 --threads 對預設的 sync worker
+# 沒有作用（會被忽略），要指定 gthread 這個 worker 類型 --threads 才會
+# 真的生效，不然同時間只能處理一個請求，串流 Google 雲端硬碟大檔案時
+# 會擋住其他請求。--timeout 拉長是因為串流較大的檔案、或 Google Drive
+# API 回應較慢時，可能會超過 gunicorn 預設的 30 秒逾時而被中斷連線。
+CMD ["sh", "-c", "gunicorn -w 1 --worker-class gthread --threads 4 --timeout 300 -b 0.0.0.0:${PORT:-5060} app:app"]
