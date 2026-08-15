@@ -61,6 +61,32 @@
     color:var(--text-dim); font-size:.9rem; flex-shrink:0; cursor:pointer;
   }
 
+  .local-note code{background:var(--card); border-radius:4px; padding:.05rem .3rem; font-size:.75rem;}
+
+  .drive-status-row{
+    display:flex; align-items:center; justify-content:space-between; font-size:.88rem;
+    font-weight:650; margin-bottom:.9rem;
+  }
+  .drive-status-row a{color:var(--text-dim); font-size:.8rem; font-weight:600; text-decoration:none;}
+  .drive-status-row a:hover{text-decoration:underline;}
+
+  #driveSearch{
+    width:100%; background:var(--card-2); border:1px solid var(--border); border-radius:10px;
+    padding:.6rem .7rem; font-size:.85rem; color:var(--text); outline:none; margin-bottom:.8rem;
+  }
+  #driveSearch::placeholder{color:var(--text-faint);}
+
+  .drive-file-list{max-height:280px; overflow-y:auto; margin-bottom:.8rem;}
+  .drive-file-row{
+    display:flex; align-items:center; gap:.6rem; padding:.55rem .3rem;
+    border-bottom:1px solid var(--border); font-size:.86rem; cursor:pointer;
+  }
+  .drive-file-row:last-child{border-bottom:none;}
+  .drive-file-row input[type=checkbox]{width:18px; height:18px; flex-shrink:0; accent-color:var(--accent);}
+  .drive-file-row .dname{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .drive-file-row .dsize{color:var(--text-faint); font-size:.75rem; flex-shrink:0;}
+  .drive-empty{color:var(--text-faint); font-size:.85rem; text-align:center; padding:1rem 0;}
+
   main{padding:0 1.2rem;}
 
   .card{
@@ -271,9 +297,32 @@
     </div>
 
     <div id="drivePane" class="hidden">
+      <div class="card" id="driveAccountCard">
+        <div id="driveNotConfigured" class="hidden">
+          <div class="local-note">⚠️ <span>伺服器尚未設定 Google 登入。可以先用下面「貼上分享連結」的方式，
+            或請管理者設定 <code>GOOGLE_CLIENT_ID</code> / <code>GOOGLE_CLIENT_SECRET</code> 環境變數。</span></div>
+        </div>
+        <div id="driveLoggedOut" class="hidden">
+          <div class="local-note">☁️ <span>登入你的 Google 帳號後，可以直接從你自己的雲端硬碟選歌播放，
+            不用先把檔案設成公開分享。</span></div>
+          <button class="primary" id="googleLoginBtn">使用 Google 帳號登入</button>
+        </div>
+        <div id="driveLoggedIn" class="hidden">
+          <div class="drive-status-row">
+            <span>✅ 已連接 Google 雲端硬碟</span>
+            <a href="#" id="googleLogoutBtn">登出</a>
+          </div>
+          <input type="text" id="driveSearch" placeholder="搜尋雲端硬碟裡的 MP3（留空顯示最近的檔案）">
+          <div class="drive-file-list" id="driveFileList"></div>
+          <div class="err-msg hidden" id="driveListErr"></div>
+          <button class="primary" id="driveAddSelectedBtn" disabled>加入播放清單（已選 0 首）</button>
+        </div>
+      </div>
+
+      <div class="section-title">或直接貼上分享連結</div>
       <div class="local-note">
-        ☁️ <span>Google 雲端硬碟的檔案要先設定共用權限為「知道連結的使用者」可檢視，才能在這裡播放；
-        檔案太大（約 25MB 以上）Google 可能會擋下直接讀取，導致無法播放。</span>
+        ☁️ <span>檔案要先設定共用權限為「知道連結的使用者」可檢視，才能用這種方式播放；
+        檔案太大時 Google 可能會擋下直接讀取，導致無法播放。</span>
       </div>
       <div class="card" id="driveCard">
         <div class="drive-rows" id="driveRows"></div>
@@ -344,6 +393,7 @@
 
 <script>
 const MAX_FILES = {{ max_files }};
+const GOOGLE_CONFIGURED = {{ 'true' if google_configured else 'false' }};
 
 // ── elements ──────────────────────────────────────────────────
 const tabLocal = document.getElementById('tabLocal');
@@ -362,6 +412,16 @@ const driveRowsEl = document.getElementById('driveRows');
 const addDriveRowBtn = document.getElementById('addDriveRowBtn');
 const driveErr = document.getElementById('driveErr');
 const driveSubmitBtn = document.getElementById('driveSubmitBtn');
+
+const driveNotConfigured = document.getElementById('driveNotConfigured');
+const driveLoggedOut = document.getElementById('driveLoggedOut');
+const driveLoggedIn = document.getElementById('driveLoggedIn');
+const googleLoginBtn = document.getElementById('googleLoginBtn');
+const googleLogoutBtn = document.getElementById('googleLogoutBtn');
+const driveSearch = document.getElementById('driveSearch');
+const driveFileList = document.getElementById('driveFileList');
+const driveListErr = document.getElementById('driveListErr');
+const driveAddSelectedBtn = document.getElementById('driveAddSelectedBtn');
 
 const playlistSection = document.getElementById('playlistSection');
 const trackListEl = document.getElementById('trackList');
@@ -419,7 +479,128 @@ function showPane(which) {
   drivePane.classList.toggle('hidden', isLocal);
 }
 tabLocal.addEventListener('click', () => showPane('local'));
-tabDrive.addEventListener('click', () => showPane('drive'));
+tabDrive.addEventListener('click', () => { showPane('drive'); refreshDriveAccountUI(); });
+
+// ── Google 帳號連接狀態（登入自己的雲端硬碟）─────────────────────
+let driveSelected = new Map(); // fileId -> {id, name, size}
+
+async function refreshDriveAccountUI() {
+  driveNotConfigured.classList.add('hidden');
+  driveLoggedOut.classList.add('hidden');
+  driveLoggedIn.classList.add('hidden');
+
+  if (!GOOGLE_CONFIGURED) {
+    driveNotConfigured.classList.remove('hidden');
+    return;
+  }
+  let status;
+  try {
+    const res = await fetch('/api/drive/status');
+    status = await res.json();
+  } catch (e) {
+    status = { connected: false };
+  }
+  if (status.connected) {
+    driveLoggedIn.classList.remove('hidden');
+    loadDriveFiles('');
+  } else {
+    driveLoggedOut.classList.remove('hidden');
+  }
+}
+
+googleLoginBtn.addEventListener('click', () => { window.location.href = '/auth/google/login'; });
+googleLogoutBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  window.location.href = '/auth/google/logout';
+});
+
+let driveSearchTimer = null;
+driveSearch.addEventListener('input', () => {
+  clearTimeout(driveSearchTimer);
+  driveSearchTimer = setTimeout(() => loadDriveFiles(driveSearch.value.trim()), 350);
+});
+
+async function loadDriveFiles(q) {
+  driveFileList.innerHTML = `<div class="drive-empty">載入中…</div>`;
+  driveListErr.classList.add('hidden');
+  try {
+    const res = await fetch('/api/drive/list?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '讀取失敗');
+    renderDriveFiles(data.files || []);
+  } catch (e) {
+    driveFileList.innerHTML = '';
+    driveListErr.textContent = '錯誤：' + e.message;
+    driveListErr.classList.remove('hidden');
+  }
+}
+
+function fmtSize(bytes) {
+  const n = Number(bytes);
+  if (!n) return '';
+  return (n / 1024 / 1024).toFixed(1) + 'MB';
+}
+
+function renderDriveFiles(files) {
+  if (!files.length) {
+    driveFileList.innerHTML = `<div class="drive-empty">沒有找到 MP3 檔案</div>`;
+    return;
+  }
+  driveFileList.innerHTML = files.map(f => `
+    <label class="drive-file-row">
+      <input type="checkbox" class="drive-file-cb" value="${f.id}" ${driveSelected.has(f.id) ? 'checked' : ''}>
+      <span class="dname">${escapeHtml(f.name)}</span>
+      <span class="dsize">${fmtSize(f.size)}</span>
+    </label>
+  `).join('');
+  driveFileList.querySelectorAll('.drive-file-cb').forEach(cb => {
+    const f = files.find(x => x.id === cb.value);
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        if (driveSelected.size >= MAX_FILES) { cb.checked = false; showDriveListWarn(); return; }
+        driveSelected.set(f.id, f);
+      } else {
+        driveSelected.delete(f.id);
+      }
+      updateDriveSelectedBtn();
+    });
+  });
+}
+
+function showDriveListWarn() {
+  driveListErr.textContent = `一次最多選 ${MAX_FILES} 首`;
+  driveListErr.classList.remove('hidden');
+  setTimeout(() => driveListErr.classList.add('hidden'), 2000);
+}
+
+function updateDriveSelectedBtn() {
+  driveAddSelectedBtn.textContent = `加入播放清單（已選 ${driveSelected.size} 首）`;
+  driveAddSelectedBtn.disabled = driveSelected.size === 0;
+}
+
+driveAddSelectedBtn.addEventListener('click', () => {
+  const newTracks = [...driveSelected.values()].map(f => ({
+    name: f.name.replace(/\.mp3$/i, ''),
+    url: `/api/drive/stream/${encodeURIComponent(f.id)}`,
+  }));
+  if (!newTracks.length) return;
+  driveSelected = new Map();
+  updateDriveSelectedBtn();
+  applyNewTracks(newTracks);
+});
+
+// OAuth 導回來後如果失敗，網址會帶 ?drive_error=...
+(function reportDriveErrorFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const err = params.get('drive_error');
+  if (err) {
+    showPane('drive');
+    refreshDriveAccountUI();
+    driveListErr.textContent = 'Google 登入失敗：' + err;
+    driveListErr.classList.remove('hidden');
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+})();
 
 addMoreBtn.addEventListener('click', () => {
   localPane.classList.remove('hidden');
