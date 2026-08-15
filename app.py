@@ -35,6 +35,8 @@ from flask import (Flask, Response, jsonify, redirect, render_template,
                     request, session, stream_with_context, url_for)
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import icon
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(32))
 
@@ -236,6 +238,34 @@ def index():
         max_files=MAX_FILES,
         google_configured=GOOGLE_CONFIGURED,
     )
+
+
+@app.route("/manifest.json")
+def web_manifest():
+    # 讓 Android Chrome「加到主畫面/安裝應用程式」時有正確的名稱、圖示、
+    # 全螢幕（standalone）顯示模式。iOS Safari 不看這個檔案，而是看
+    # index.html 裡的 apple-touch-icon / apple-mobile-web-app-* meta 標籤。
+    return jsonify({
+        "name": "MP3 網頁播放器",
+        "short_name": "MP3 播放器",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0b0b12",
+        "theme_color": "#0c0c14",
+        "icons": [
+            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    })
+
+
+@app.route("/icon-<int:size>.png")
+def app_icon(size: int):
+    if size not in (192, 512):
+        return jsonify(error="not found"), 404
+    resp = Response(icon.make_icon_png(size), mimetype="image/png")
+    resp.headers["Cache-Control"] = "public, max-age=604800"  # 圖示內容固定，可放心快取一週
+    return resp
 
 
 @app.route("/api/drive/status")
